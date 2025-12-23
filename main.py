@@ -1,89 +1,108 @@
 import streamlit as st
 import pandas as pd
+import os
+import json
+import io
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-import json
 from PIL import Image
-import io
 
-# 1. Page Configuration
-st.set_page_config(page_title="data entry agency", page_icon="📚", layout="wide")
+# 1. Load Security Credentials from .env
+load_dotenv()
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-# 2. API Setup
-API_KEY = "AIzaSyCbOc_Y0inBFzu7WprAkBmy63k3_IluSDU"
+# 2. Page Configuration
+st.set_page_config(page_title="Mwalimu-Agent Bulk", page_icon="📚", layout="wide")
+
+# 3. Branding
+st.title("📚 Mwalimu-Agent: National Digitization Portal")
+st.markdown("---")
+
+if not API_KEY:
+    st.error("🔑 API Key not found! Please ensure GEMINI_API_KEY is set in your .env file.")
+    st.stop()
+
+# 4. Initialize Client
 client = genai.Client(api_key=API_KEY)
 MODEL_ID = "models/gemini-2.5-flash"
 
-# 3. Branding & Header
-st.title("📚 data entry: Bulk Digitalizer")
-st.markdown("Upload multiple classroom records to generate a single consolidated report.")
-
-# 4. Sidebar Configuration
+# 5. Sidebar Settings
 with st.sidebar:
-    st.header("⚙️ Extraction Settings")
-    target_cols = st.text_input("Data Columns (comma-separated):", "Student Name, ID, Marks")
-    st.info(f"Using Engine: {MODEL_ID}")
+    st.header("⚙️ Configuration")
+    target_cols = st.text_input("Extraction Columns:", "Student Name, ID, Grade")
+    st.info(f"Engine: {MODEL_ID}")
+    st.write("---")
+    st.write("📍 **Location:** Kigali, Rwanda")
 
-# 5. File Uploader (Accepts Multiple Files)
+# 6. Bulk File Uploader
 uploaded_files = st.file_uploader(
-    "Upload handwritten record photos", 
+    "Drag and drop handwritten records (JPG/PNG)", 
     type=["jpg", "jpeg", "png"], 
     accept_multiple_files=True
 )
 
 if uploaded_files:
-    # Display image previews in a grid
-    st.subheader("🖼️ Uploaded Documents")
+    # Preview Grid
+    st.subheader("🖼️ Previewing Uploads")
     cols = st.columns(4)
     for idx, file in enumerate(uploaded_files):
         cols[idx % 4].image(file, use_container_width=True, caption=file.name)
 
-    if st.button("🚀 Process All Records"):
+    if st.button("🚀 Process All Documents"):
         all_results = []
         progress_bar = st.progress(0)
         
-        # 6. Processing Loop
         for i, file in enumerate(uploaded_files):
-            with st.spinner(f"Transcribing {file.name}..."):
-                try:
-                    img_bytes = file.getvalue()
-                    prompt = f"Extract data for {target_cols}. Return strictly as a JSON list."
-                    
-                    response = client.models.generate_content(
-                        model=MODEL_ID,
-                        contents=[
-                            prompt,
-                            types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-                        ],
-                        config=types.GenerateContentConfig(response_mime_type="application/json")
-                    )
-                    
-                    # Add current image results to our master list
-                    current_data = json.loads(response.text)
-                    all_results.extend(current_data)
-                    
-                except Exception as e:
-                    st.error(f"Error in {file.name}: {e}")
+            try:
+                # Read image bytes
+                img_bytes = file.getvalue()
+                
+                # AI Prompt
+                prompt = (
+                    f"Extract data for these columns: {target_cols}. "
+                    "Return strictly as a JSON list. If handwriting is illegible, use 'N/A'."
+                )
+                
+                # AI Execution
+                response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[
+                        prompt,
+                        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+                    ],
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                )
+                
+                # Parse and Collect
+                batch_data = json.loads(response.text)
+                # Add a column to track which file the data came from
+                for entry in batch_data:
+                    entry["Source_File"] = file.name
+                all_results.extend(batch_data)
+                
+            except Exception as e:
+                st.error(f"❌ Error processing {file.name}: {str(e)}")
             
-            # Update progress
+            # Update Progress
             progress_bar.progress((i + 1) / len(uploaded_files))
 
-        # 7. Final Results & Download
+        # 7. Final Output
         if all_results:
-            st.success(f"✅ Successfully processed {len(uploaded_files)} files!")
-            final_df = pd.DataFrame(all_results)
+            st.success(f"✅ Successfully Digitized {len(uploaded_files)} Records!")
+            df = pd.DataFrame(all_results)
             
-            # Display the consolidated table
-            st.subheader("📊 Consolidated Data")
-            st.data_editor(final_df, use_container_width=True)
+            # Interactive Table
+            st.subheader("📊 Consolidated Data Table")
+            st.data_editor(df, use_container_width=True, num_rows="dynamic")
             
-            # One-click CSV Download
-            csv_data = final_df.to_csv(index=False).encode('utf-8')
+            # CSV Export
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
             st.download_button(
                 label="💾 Download Consolidated CSV",
-                data=csv_data,
-                file_name="mwalimu_bulk_report.csv",
-                mime="text/csv",
-                key="download-csv"
+                data=csv_buffer.getvalue(),
+                file_name="mwalimu_bulk_export.csv",
+                mime="text/csv"
             )
             st.balloons()
