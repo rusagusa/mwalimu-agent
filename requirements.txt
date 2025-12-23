@@ -6,3 +6,7 @@ autopep8
 google-genai # Client library for the Gemini API
 Pillow # PIL image-loading library
 flask
+python-dotenv
+google-genai
+pandas
+Pillow
