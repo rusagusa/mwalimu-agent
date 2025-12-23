@@ -13,10 +13,10 @@ load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 # 2. Page Configuration
-st.set_page_config(page_title="Mwalimu-Agent Bulk", page_icon="📚", layout="wide")
+st.set_page_config(page_title="data entry agent", page_icon="📚", layout="wide")
 
 # 3. Branding
-st.title("📚 Mwalimu-Agent: National Digitization Portal")
+st.title("📚 data entry agent: National Digitization Portal")
 st.markdown("---")
 
 if not API_KEY:
